@@ -31,7 +31,7 @@ controls.dampingFactor = 0.08;
 controls.enablePan = true;
 controls.screenSpacePanning = true;
 controls.zoomToCursor = true;
-controls.zoomSpeed = 1.6;  // stronger wheel zoom
+controls.zoomSpeed = 1.2;
 controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
 
 // ---- Lights ----
@@ -87,6 +87,12 @@ let xrayOn = false;
 const originalMats = new Map();
 const edgeOverlays = new Map();
 
+// --- Raycast targeting state ---
+const raycaster = new THREE.Raycaster();
+const mouseNDC = new THREE.Vector2();
+const lastHit = new THREE.Vector3(); // last valid hit point
+let haveLastHit = false;
+
 // ---- Load model ----
 fetch('config.json')
   .then(r => r.ok ? r.json() : { model:'test-1.glb', websocket_url:null, camera_prefix:'CCTV_', simulate_if_no_ws:true })
@@ -102,21 +108,28 @@ function startWithConfig(cfg){
     modelRoot = gltf.scene;
     scene.add(modelRoot);
 
+    // --- Frame model and set camera limits sanely ---
     const box = new THREE.Box3().setFromObject(modelRoot);
-    const size = box.getSize(new THREE.Vector3()).length();
+    const sizeVec = new THREE.Vector3();
+    box.getSize(sizeVec);
+    const radius = 0.5 * Math.max(sizeVec.x, sizeVec.y, sizeVec.z) || 1;
+    const fovRad = camera.fov * Math.PI / 180;
+    const idealDist = radius / Math.tan(fovRad * 0.5);
     const center = box.getCenter(new THREE.Vector3());
     modelRoot.position.sub(center);
-    controls.target.set(0,0,0);
-    camera.position.set(size*0.25, size*0.22, size*0.28);
 
-    // ---- UNCAP close zoom + huge range ----
-    controls.minDistance = 0;                               // remove close-in floor
-    controls.maxDistance = Math.max(2000, size * 100);      // allow very far pull-out
-    camera.near = 1e-6;                                     // extremely tiny near plane
-    camera.far  = Math.max(200000, size * 1000);            // very deep far plane
+    controls.target.set(0, 0, 0);
+    camera.position.copy(new THREE.Vector3(1, 0.85, 1).normalize().multiplyScalar(idealDist * 1.6));
+
+    camera.near = Math.max(0.01, idealDist / 1000);
+    camera.far  = idealDist * 200;
     camera.updateProjectionMatrix();
+
+    controls.minDistance = Math.max(0.05, idealDist * 0.02);
+    controls.maxDistance = idealDist * 20;
     controls.update();
 
+    // --- Camera detection and markers ---
     modelRoot.traverse((o)=>{
       if (!o.isMesh) return;
       if (o.name && o.name.startsWith(CAM_PREFIX)){
@@ -132,7 +145,7 @@ function startWithConfig(cfg){
     });
     markers.count = cams.length;
     markers.instanceMatrix.needsUpdate = true;
-    document.getElementById('legend').textContent = `Detected ${cams.length} cameras by prefix "${CAM_PREFIX}"`;
+    document.getElementById('legend') && (document.getElementById('legend').textContent = `Detected ${cams.length} cameras by prefix "${CAM_PREFIX}"`);
 
     connectWS(cfg.websocket_url, cfg.simulate_if_no_ws !== false);
   }, undefined, (err)=>{
@@ -142,15 +155,15 @@ function startWithConfig(cfg){
 
 // ---- WebSocket ----
 function connectWS(url, simulate){
-  if (!url){ wsStatus.textContent = 'disabled'; if (simulate) startSim(); return; }
+  if (!url){ wsStatus && (wsStatus.textContent = 'disabled'); if (simulate) startSim(); return; }
   try {
     const ws = new WebSocket(url);
-    ws.onopen = ()=> wsStatus.textContent = 'connected';
-    ws.onclose = ()=> { wsStatus.textContent = 'closed'; if (simulate) startSim(); };
-    ws.onerror = ()=> { wsStatus.textContent = 'error'; if (simulate) startSim(); };
+    ws.onopen = ()=> wsStatus && (wsStatus.textContent = 'connected');
+    ws.onclose = ()=> { wsStatus && (wsStatus.textContent = 'closed'); if (simulate) startSim(); };
+    ws.onerror = ()=> { wsStatus && (wsStatus.textContent = 'error'); if (simulate) startSim(); };
     ws.onmessage = (ev)=> { try { handleEvent(JSON.parse(ev.data)); } catch(_){} };
   } catch {
-    wsStatus.textContent = 'failed';
+    wsStatus && (wsStatus.textContent = 'failed');
     if (simulate) startSim();
   }
 }
@@ -164,13 +177,13 @@ function handleEvent(evt){
   const s = Math.max(0, Math.min(1, Number(evt.severity ?? 1)));
   c.heat = c.heat * 0.9 + s * 0.8;
   if (heatmapEnabled) addHeatBlob(c.world.x, c.world.z, s);
-  eventCount++; evCountEl.textContent = String(eventCount);
+  eventCount++; evCountEl && (evCountEl.textContent = String(eventCount));
 }
 
 let simTimer = null;
 function startSim(){
   if (simTimer || !cams.length) return;
-  wsStatus.textContent = 'simulating';
+  wsStatus && (wsStatus.textContent = 'simulating');
   simTimer = setInterval(()=>{
     const i = Math.floor(Math.random()*cams.length);
     const sev = 0.3 + Math.random()*0.7;
@@ -268,6 +281,42 @@ function updateEdgeFollows(){
   });
 }
 
+// ---- Targeting helpers (fix zoom by re-targeting under cursor) ----
+function updateMouseNDC(event){
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouseNDC.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouseNDC.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
+function raycastUnderMouse(){
+  if (!modelRoot) return null;
+  raycaster.setFromCamera(mouseNDC, camera);
+  const hits = raycaster.intersectObject(modelRoot, true);
+  return hits.length ? hits[0] : null;
+}
+
+// track last valid hit while moving
+renderer.domElement.addEventListener('pointermove', (e)=>{
+  updateMouseNDC(e);
+  const hit = raycastUnderMouse();
+  if (hit){
+    lastHit.copy(hit.point);
+    haveLastHit = true;
+  }
+});
+
+// double-click to retarget orbit point to surface under cursor
+renderer.domElement.addEventListener('dblclick', (e)=>{
+  updateMouseNDC(e);
+  const hit = raycastUnderMouse();
+  if (hit){
+    controls.target.copy(hit.point);
+    haveLastHit = true;
+    lastHit.copy(hit.point);
+    controls.update();
+  }
+});
+
 // ---- Keyboard ----
 window.addEventListener('keydown', (e)=>{
   if (e.key==='h' || e.key==='H'){ heatmapEnabled = !heatmapEnabled; floor.visible = heatmapEnabled; }
@@ -279,7 +328,7 @@ window.addEventListener('keydown', (e)=>{
     camera.position.lerp(new THREE.Vector3(t.world.x+6, t.world.y+4, t.world.z+6), 0.7);
   }
   else if (e.key==='x' || e.key==='X'){ if (xrayOn) disableXRay(); else enableXRay(); }
-  else if (e.key==='e' || e.key==='E'){ // Zoom extents
+  else if (e.key==='e' || e.key==='E'){ // Zoom extents (frame)
     if (!modelRoot) return;
     const box = new THREE.Box3().setFromObject(modelRoot);
     const size = box.getSize(new THREE.Vector3()).length();
@@ -287,12 +336,26 @@ window.addEventListener('keydown', (e)=>{
     controls.target.set(0,0,0);
     controls.update();
   }
-  else if (e.key==='c' || e.key==='C'){ // Close-focus: set target just ahead of camera
+  else if (e.key==='c' || e.key==='C'){ // Close-focus safely (5–10 cm ahead)
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
-    controls.target.copy(camera.position).add(dir.multiplyScalar(0.05)); // ~5 cm in front
-    camera.near = 1e-6; camera.updateProjectionMatrix();
-    controls.minDistance = 0; controls.update();
+    controls.target.copy(camera.position).add(dir.multiplyScalar(0.1));
+    camera.near = Math.max(0.01, camera.near);
+    camera.updateProjectionMatrix();
+    controls.minDistance = Math.max(0.05, controls.minDistance);
+    controls.update();
+  }
+  else if (e.key==='z' || e.key==='Z'){ // Snap target to last mouse hit (or ray forward)
+    if (haveLastHit){
+      controls.target.copy(lastHit);
+      controls.update();
+    } else {
+      // if no hit yet, drop a point ~5m ahead to regain control
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      controls.target.copy(camera.position).add(dir.multiplyScalar(5));
+      controls.update();
+    }
   }
 });
 

@@ -1,12 +1,12 @@
 # Fogsphere 3D Heatmap Viewer
 
-This is a tiny, production‑friendly viewer that loads your SketchUp factory model as **GLB**, auto‑detects CCTV nodes by name (e.g., `CCTV_01`…`CCTV_50`), and renders live **heat pulses** when events arrive via WebSocket. If no WebSocket is found, it simulates events so you can demo instantly.
+This is a tiny, production‑friendly viewer that loads your SketchUp factory model as GLB, auto‑detects CCTV nodes by name (e.g., `CCTV_01`…`CCTV_50`), and renders live heat pulses when events arrive via WebSocket. If no WebSocket is found, it simulates events so you can demo instantly.
 
 ## Files
 - `index.html` — web page that pulls three.js from CDN
 - `app.js` — viewer logic (orbit controls, GLB load, markers, heatmap)
 - `config.json` — path to your model and WS URL
-- `test-1.glb` — **place your GLB here** (not included in this zip)
+- `test-1.glb` — place your GLB here
 
 ## Quick Start
 1. Copy your GLB to this folder and name it `test-1.glb` (or update `config.json`).
@@ -22,7 +22,7 @@ Expected JSON (WebSocket message):
 { "camera_id": "CCTV_09", "severity": 0.8, "type": "NoHelmet", "ts": "2025-09-25T10:11:22Z" }
 ```
 - `camera_id` must match an object name inside the GLB.
-- `severity` ∈ [0..1] maps to color (amber→orange→red) and pulse size.
+- `severity` ∈ [0..1] maps to color (amber-orange-red) and pulse size.
 
 ## Controls
 - **F** — frame nearest camera
