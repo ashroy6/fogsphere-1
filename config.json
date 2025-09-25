@@ -1,0 +1,6 @@
+{
+  "model": "test-1.glb",
+  "websocket_url": "ws://localhost:9001",
+  "camera_prefix": "CCTV_",
+  "simulate_if_no_ws": true
+}
