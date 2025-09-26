@@ -40,9 +40,11 @@
     #camMeta .row{ display:flex; justify-content:space-between; gap:10px; }
     #eventsHeader{ margin-top:10px; font-size:12px; color:var(--muted); border-top:1px solid var(--border); padding-top:8px; }
     #eventList{ max-height:160px; overflow:auto; }
-    .ev{ display:grid; grid-template-columns: 70px 1fr 42px; gap:6px; align-items:center; font-size:12px; padding:3px 0; }
+    /* Now 4 columns: time | type | bar | severity */
+    .ev{ display:grid; grid-template-columns: 70px 120px 1fr 42px; gap:6px; align-items:center; font-size:12px; padding:3px 0; }
     .ev .bar{ height:6px; background: rgba(255,0,0,.4); border-radius:4px; }
     .ev .ts{ color:var(--muted); }
+    .ev .type{ color:#d7e7ff; opacity:.9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   </style>
   <!-- Import map ensures any internal 'three' package imports resolve locally -->
   <script type="importmap">
@@ -70,7 +72,7 @@
     <div class="row"><label for="opacity">Opacity</label><input id="opacity" type="range" min="0.2" max="1.0" step="0.05" value="0.75"><span id="opacityVal" class="sev">0.75</span></div>
     <div class="row"><label>Heatmap</label><input id="toggleHeatmap" type="checkbox"></div>
     <div class="row"><label>X-ray</label><input id="toggleXray" type="checkbox"></div>
-    <div id="camDetails">Selected: <span id="selName">—</span><br/>Last event: <span id="selTime">—</span> · Sev <span id="selSev">—</span></div>
+    <div id="camDetails">Selected: <span id="selName">—</span><br/>Last event: <span id="selTime">—</span> · Sev <span id="selSev">—</span> · Type <span id="selType">—</span></div>
 
     <!-- extra details -->
     <div id="camMeta">

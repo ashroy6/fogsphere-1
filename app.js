@@ -91,13 +91,13 @@ scene.add(floor);
 let heatmapEnabled = false;
 
 // ---- State ----
-let cams = [];                         // [{id,obj,world,heat,lastTs,lastSev}]
+let cams = [];                         // [{id,obj,world,heat,lastTs,lastSev,lastType}]
 const camIndex = new Map();            // name -> index
 let modelRoot = null;
 
 let selectedIndex = -1;                // current selected camera index
 const lastEventById = new Map();       // id -> {ts, severity}
-// Per-camera event history (id -> [{ts, severity, payload}])
+// Per-camera event history (id -> [{ts, severity, payload:{type,...}}])
 const eventHistory = new Map();
 
 // --- X-ray state ---
@@ -124,13 +124,37 @@ const cameraListEl = $("cameraList");
 const selNameEl = $("selName");
 const selTimeEl = $("selTime");
 const selSevEl = $("selSev");
+const selTypeEl = $("selType"); // <-- added
+
 // extra details
 const dIdEl = $("d_id");
 const dPosEl = $("d_pos");
 const dDistEl = $("d_dist");
 const eventListEl = $("eventList");
 
+// ---- Type map (label + hue for bar color). Unknown types fall back cleanly.
+const TYPE_META = {
+  zone_intrusion:        { label: "Zone Intrusion",   hue: 10  },
+  line_crossing:         { label: "Line Crossing",    hue: 20  },
+  loitering:             { label: "Loitering",        hue: 35  },
+  object_left:           { label: "Object Left",      hue: 290 },
+  object_removed:        { label: "Object Removed",   hue: 280 },
+  ppe_missing_hardhat:   { label: "No Hard Hat",      hue: 0   },
+  ppe_missing_hivis:     { label: "No Hi-Vis",        hue: 330 },
+  ppe_missing_glasses:   { label: "No Safety Glasses",hue: 300 },
+  smoke:                 { label: "Smoke",            hue: 0   },
+  fire:                  { label: "Fire",             hue: 0   },
+  vehicle_speeding:      { label: "Speeding",         hue: 15  },
+  wrong_way_vehicle:     { label: "Wrong Way",        hue: 25  },
+  crowding:              { label: "Crowding",         hue: 40  },
+  queue_overlimit:       { label: "Queue Overlimit",  hue: 45  },
+  worker_down:           { label: "Worker Down",      hue: 0   },
+};
+
 // ---- Helpers ----
+function metaOf(type){
+  return TYPE_META[type] || { label: (type || "—"), hue: 210 };
+}
 function fmtXYZ(v){ return `${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}`; }
 function timeAgo(ts){
   const s = Math.max(0, Math.round((Date.now()-ts)/1000));
@@ -148,13 +172,16 @@ function renderEventList(id){
   const arr = eventHistory.get(id) || [];
   const rows = arr.slice(-10).reverse().map(e=>{
     const w = Math.round(e.severity * 100);
+    const type = e.payload?.type;
+    const meta = metaOf(type);
     return `<div class="ev">
       <span class="ts">${timeAgo(e.ts)} ago</span>
-      <div class="bar" style="width:${w}%"></div>
+      <span class="type">${meta.label}</span>
+      <div class="bar" style="width:${w}%; background: hsla(${meta.hue},70%,50%,.5)"></div>
       <span>${e.severity.toFixed(2)}</span>
     </div>`;
   }).join("");
-  eventListEl.innerHTML = rows || `<div class="ev"><span class="ts">no events</span><div></div><span>—</span></div>`;
+  eventListEl.innerHTML = rows || `<div class="ev"><span class="ts">no events</span><span class="type">—</span><div></div><span>—</span></div>`;
 }
 
 // ---- Load model ----
@@ -202,7 +229,7 @@ function startWithConfig(cfg){
         o.getWorldPosition(world);
         const i = cams.length;
         camIndex.set(o.name, i);
-        cams.push({ id:o.name, obj:o, world, heat:0, lastTs:null, lastSev:null });
+        cams.push({ id:o.name, obj:o, world, heat:0, lastTs:null, lastSev:null, lastType:null });
 
         const p = new THREE.Vector3(world.x, world.y + 0.2, world.z);
         const m = new THREE.Matrix4().compose(p, new THREE.Quaternion(), new THREE.Vector3(1,1,1));
@@ -246,13 +273,18 @@ function handleEvent(evt){
   const idx = camIndex.get(evt.camera_id);
   if (idx === undefined) return;
   const c = cams[idx];
+
   const s = Math.max(0, Math.min(1, Number(evt.severity ?? 1)));
+  const typ = String(evt.type || "unknown");
+
   c.heat = c.heat * 0.9 + s * 0.8;
   c.lastTs = Date.now();
   c.lastSev = s;
+  c.lastType = typ;
   lastEventById.set(c.id, { ts: c.lastTs, severity: s });
 
-  pushEvent(c.id, s, evt.payload);      // store in history
+  // store in history with type
+  pushEvent(c.id, s, { ...(evt.payload||{}), type: typ });
 
   if (selectedIndex === idx){
     refreshSelectedDetails();
@@ -264,13 +296,22 @@ function handleEvent(evt){
 }
 
 let simTimer = null;
+// Random demo types
+const SIM_TYPES = [
+  "zone_intrusion","line_crossing","loitering",
+  "ppe_missing_hardhat","ppe_missing_hivis","ppe_missing_glasses",
+  "smoke","fire","vehicle_speeding","wrong_way_vehicle",
+  "crowding","queue_overlimit","worker_down"
+];
+function randType(){ return SIM_TYPES[(Math.random()*SIM_TYPES.length)|0]; }
+
 function startSim(){
   if (simTimer || !cams.length) return;
   wsStatus && (wsStatus.textContent = 'simulating');
   simTimer = setInterval(()=>{
     const i = Math.floor(Math.random()*cams.length);
     const sev = 0.3 + Math.random()*0.7;
-    handleEvent({ camera_id: cams[i].id, severity: sev });
+    handleEvent({ camera_id: cams[i].id, severity: sev, type: randType(), ts: Date.now() });
   }, 1500);
 }
 
@@ -397,6 +438,7 @@ function bumpListRow(i, sev){
 function refreshSelectedDetails(){
   if (selectedIndex < 0){
     selNameEl.textContent='—'; selTimeEl.textContent='—'; selSevEl.textContent='—';
+    selTypeEl.textContent='—';
     dIdEl.textContent = '—'; dPosEl.textContent = '—'; dDistEl.textContent = '—';
     eventListEl.innerHTML = '';
     return;
@@ -404,6 +446,7 @@ function refreshSelectedDetails(){
   const c = cams[selectedIndex];
   selNameEl.textContent = c.id;
   selSevEl.textContent = (c.lastSev==null?'—':c.lastSev.toFixed(2));
+  selTypeEl.textContent = c.lastType ? metaOf(c.lastType).label : '—';
   if (c.lastTs){
     selTimeEl.textContent = `${timeAgo(c.lastTs)} ago`;
   } else {
