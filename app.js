@@ -56,11 +56,24 @@ const heatColor = (s)=>{
   return s < 0.5 ? a.clone().lerp(b, s/0.5) : b.clone().lerp(c, (s-0.5)/0.5);
 };
 
-const markerGeo = new THREE.SphereGeometry(0.15,16,16);
-const markerMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+// 🔧 markers: make visible & uncullable
+const markerGeo = new THREE.SphereGeometry(2,24,24);
+const markerMat = new THREE.MeshBasicMaterial({
+  color: 0xff0000,
+  transparent: true,
+  opacity: 0.75,
+  depthTest: false,   // draw on top
+  depthWrite: false
+});
 const markers = new THREE.InstancedMesh(markerGeo, markerMat, 2048);
 markers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+markers.frustumCulled = false; // <— prevent whole batch from vanishing
 scene.add(markers);
+
+// 🔔 Global pulse controls (all markers in sync)
+const PULSE_PERIOD_MS = 1200;   // smaller = faster pulse
+const BASE_SCALE      = 0.7;    // minimum size
+const AMP_SCALE       = 0.3;    // pulse amount
 
 const floorSize = 200;
 const heatmapCanvas = document.createElement('canvas');
@@ -129,20 +142,28 @@ function startWithConfig(cfg){
     controls.maxDistance = idealDist * 20;
     controls.update();
 
+    // 🔧 ensure node world matrices are up-to-date post recentre
+    modelRoot.updateMatrixWorld(true);
+
     // --- Camera detection and markers ---
     modelRoot.traverse((o)=>{
-      if (!o.isMesh) return;
       if (o.name && o.name.startsWith(CAM_PREFIX)){
         const world = new THREE.Vector3();
         o.getWorldPosition(world);
         const i = cams.length;
         camIndex.set(o.name, i);
         cams.push({ id:o.name, obj:o, world, heat:0, markerIndex:i });
-        const m = new THREE.Matrix4().setPosition(world);
+
+        // 🔧 lift markers by 0.2m to avoid z-fighting
+        const p = new THREE.Vector3(world.x, world.y + 0.2, world.z);
+        const m = new THREE.Matrix4().compose(p, new THREE.Quaternion(), new THREE.Vector3(1,1,1));
         markers.setMatrixAt(i, m);
       }
-      if (!originalMats.has(o.uuid)) originalMats.set(o.uuid, o.material);
+      if (o.isMesh && !originalMats.has(o.uuid)) {
+        originalMats.set(o.uuid, o.material);
+      }
     });
+
     markers.count = cams.length;
     markers.instanceMatrix.needsUpdate = true;
     document.getElementById('legend') && (document.getElementById('legend').textContent = `Detected ${cams.length} cameras by prefix "${CAM_PREFIX}"`);
@@ -181,6 +202,7 @@ function handleEvent(evt){
 }
 
 let simTimer = null;
+// 🔧 fixed stray 'x' that caused blank page
 function startSim(){
   if (simTimer || !cams.length) return;
   wsStatus && (wsStatus.textContent = 'simulating');
@@ -191,16 +213,25 @@ function startSim(){
   }, 1500);
 }
 
-// ---- Markers update ----
+// ---- Markers update (global, in-sync pulse) ----
 const workColor = new THREE.Color();
-function updateMarkers(dt){
+function updateMarkers(dt, now){
+  // global 0..1 pulse (everyone same phase)
+  const TWO_PI = Math.PI * 2;
+  const pulse01 = 0.5 + 0.5 * Math.sin((now % PULSE_PERIOD_MS) * (TWO_PI / PULSE_PERIOD_MS));
+  const sGlobal = BASE_SCALE + AMP_SCALE * pulse01;
+
   for (let i=0;i<cams.length;i++){
     const c = cams[i];
-    c.heat = Math.max(0, c.heat - dt*0.12);
+    // keep heat decay for color only
+    c.heat = Math.max(0, c.heat - dt*0.75);
+
     workColor.copy(heatColor(c.heat));
     markers.setColorAt && markers.setColorAt(i, workColor);
-    const s = 0.9 + 0.3*c.heat;
-    const m = new THREE.Matrix4().compose(c.world, new THREE.Quaternion(), new THREE.Vector3(s,s,s));
+
+    // keep the 0.2m lift; scale all by sGlobal
+    const p = new THREE.Vector3(c.world.x, c.world.y + 0.2, c.world.z);
+    const m = new THREE.Matrix4().compose(p, new THREE.Quaternion(), new THREE.Vector3(sGlobal, sGlobal, sGlobal));
     markers.setMatrixAt(i, m);
   }
   markers.instanceColor && (markers.instanceColor.needsUpdate = true);
@@ -370,7 +401,7 @@ function animate(now){
   requestAnimationFrame(animate);
   const dt = Math.min(0.1, (now-last)/1000); last = now;
   controls.update();
-  updateMarkers(dt);
+  updateMarkers(dt, now);   // <-- pass time so all markers pulse together
   if (heatmapEnabled) decayHeatmap();
   updateEdgeFollows();
   renderer.render(scene, camera);

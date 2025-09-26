@@ -31,9 +31,9 @@ Expected JSON (WebSocket message):
 - **Click** a camera marker — focus the orbit target
 
 ## Notes
-- Uses **InstancedMesh** for markers (fast even with hundreds of cameras).
-- Floor heatmap is a simple render‑to‑texture with gaussian blobs and decay.
+- Uses **InstancedMesh** for markers It shoiuld be fast even with hundreds of cameras).
+- Floor heatmap is a simple render‑to‑texture.
 - You can point the viewer to your fog broker gateway by editing `config.json`.
 
 ## Security
-If you connect to a real broker, ensure you’re using a WS gateway with auth (per‑viewer credentials) and that you don’t expose raw internal topics to the public internet.
+If you connect to a real broker, ensure you’re using a WS gateway with auth (perviewer credentials) and that you don’t expose raw internal topics to the public internet.
