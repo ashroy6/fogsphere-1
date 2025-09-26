@@ -1,39 +1,86 @@
-# Fogsphere 3D Heatmap Viewer
+# Fogsphere Demo
 
-This is a tiny, production‑friendly viewer that loads your SketchUp factory model as GLB, auto‑detects CCTV nodes by name (e.g., `CCTV_01`…`CCTV_50`), and renders live heat pulses when events arrive via WebSocket. If no WebSocket is found, it simulates events so you can demo instantly.
+This is a lightweight 3D demo built with **Three.js** to showcase how a factory floor or site can be visualized, with cameras and events overlaid on top of the model. It’s designed as a proof-of-concept for edge/fog monitoring — everything runs locally in the browser, no cloud services needed.
 
-## Files
-- `index.html` — web page that pulls three.js from CDN
-- `app.js` — viewer logic (orbit controls, GLB load, markers, heatmap)
-- `config.json` — path to your model and WS URL
-- `test-1.glb` — place your GLB here
+---
 
-## Quick Start
-1. Copy your GLB to this folder and name it `test-1.glb` (or update `config.json`).
-2. Start a static server (one-liner):
-   - Python 3: `python -m http.server 8000`
-3. Open: `http://localhost:8000`
+## Features
 
-You can rotate, zoom, and pan with the mouse (OrbitControls). The app will try to connect to `ws://localhost:9001`. If unavailable, it switches to a **simulator** that sends random events to your cameras.
+* Loads a SketchUp/Blender/.GLB model in the browser
+* Supports multiple camera nodes (CCTV_A1…A7)
+* Optional event simulation feed (WebSocket)
+* Runs with any static web server — no heavy backend required
 
-## Live Events
-Expected JSON (WebSocket message):
-```json
-{ "camera_id": "CCTV_09", "severity": 0.8, "type": "NoHelmet", "ts": "2025-09-25T10:11:22Z" }
+---
+
+## Getting Started
+
+Clone the repo:
+
+```bash
+git clone https://github.com/ashroy6/fogsphere-1.git
+cd fogsphere-1
 ```
-- `camera_id` must match an object name inside the GLB.
-- `severity` ∈ [0..1] maps to color (amber-orange-red) and pulse size.
 
-## Controls
-- **F** — frame nearest camera
-- **H** — toggle floor heatmap overlay
-- **R** — reset orbit view
-- **Click** a camera marker — focus the orbit target
+You **must** serve the folder over HTTP (ES modules don’t work from `file://`).
+Pick one of these quick methods:
+
+### Option A — Python 3 (no extra installs)
+
+```bash
+python3 -m http.server 8080
+# Windows PowerShell: py -m http.server 8080
+```
+
+Then open: [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
+http://localhost:8080/
+
+---
+
+### Option B — Node.js
+
+```bash
+npm i -g http-server
+http-server -p 8080
+```
+
+Open: [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
+
+---
+
+### Option C — VS Code
+
+* Install the **Live Server** extension
+* Open the folder in VS Code
+* Right-click `index.html` → **Open with Live Server**
+
+---
+
+## Requirements
+
+* Modern browser (Chrome, Edge, or Firefox) with WebGL2 enabled
+* GPU drivers / hardware acceleration enabled
+* No other special dependencies
+
+---
 
 ## Notes
-- Uses **InstancedMesh** for markers It shoiuld be fast even with hundreds of cameras).
-- Floor heatmap is a simple render‑to‑texture.
-- You can point the viewer to your fog broker gateway by editing `config.json`.
 
-## Security
-If you connect to a real broker, ensure you’re using a WS gateway with auth (perviewer credentials) and that you don’t expose raw internal topics to the public internet.
+* If you see a **WebSocket error** in the browser console, that’s just the optional event simulator. The 3D scene will still load fine.
+* If port **8080** is already taken, switch to another (e.g., 8081) and change the URL.
+* Model file `test-1.glb` must remain in the repo’s root folder.
+
+---
+
+## Next Steps
+
+* Add real event feeds from cameras or IoT devices via MQTT/WS
+* Extend UI for alerts (halos, cones, heatmaps)
+* Deploy behind Nginx/Apache for team-wide access
+
+---
+
+👉 This repo is for demo purposes only. Everything runs locally and no data leaves your machine.
+
+---
+
