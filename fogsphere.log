@@ -801,3 +801,43 @@
  HTTP  9/26/2025 7:14:22 AM 127.0.0.1 GET /favicon.ico
  HTTP  9/26/2025 7:14:22 AM 127.0.0.1 Returned 304 in 2 ms
  HTTP  9/26/2025 7:14:22 AM 127.0.0.1 Returned 304 in 2 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 200 in 7 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /app.js?v=8
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 200 in 6 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /three.module.js
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 304 in 2 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /OrbitControls.module.js
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 304 in 1 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /GLTFLoader.module.js
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /RoomEnvironment.module.js
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 304 in 2 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 304 in 2 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /utils/BufferGeometryUtils.js
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 304 in 1 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /config.json
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 304 in 5 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /favicon.ico
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 GET /test-1.glb
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 304 in 1 ms
+ HTTP  9/26/2025 7:36:51 AM 127.0.0.1 Returned 200 in 3 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 1 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /app.js?v=8
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 200 in 4 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /three.module.js
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 2 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /OrbitControls.module.js
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /GLTFLoader.module.js
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 2 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /RoomEnvironment.module.js
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 2 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 1 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /utils/BufferGeometryUtils.js
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 2 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /config.json
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 1 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /favicon.ico
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 GET /test-1.glb
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 1 ms
+ HTTP  9/26/2025 7:39:29 AM 127.0.0.1 Returned 304 in 2 ms

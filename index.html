@@ -5,11 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fogsphere 3D Heatmap Viewer</title>
   <style>
-    html, body { margin:0; padding:0; height:100%; background:#0b0f14; color:#e6edf3; font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica Neue,Arial; }
-    #hud { position: fixed; top:10px; left:10px; padding:10px 12px; background: rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.08); border-radius:10px; backdrop-filter: blur(4px); }
+    :root{
+      --glass: rgba(0,0,0,0.45);
+      --border: rgba(255,255,255,0.08);
+      --fg: #e6edf3;
+      --muted: rgba(230,237,243,.7);
+      --accent: #69c;
+      --active: rgba(105, 156, 204, .25);
+    }
+    html, body { margin:0; padding:0; height:100%; background:#0b0f14; color:var(--fg); font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica Neue,Arial; }
+    /* top-left HUD */
+    #hud { position: fixed; top:10px; left:10px; padding:10px 12px; background: var(--glass); border:1px solid var(--border); border-radius:10px; backdrop-filter: blur(4px); z-index:5; }
     #hud code { background: rgba(255,255,255,0.08); padding:1px 6px; border-radius:6px; }
     #legend { margin-top:8px; font-size:12px; opacity:0.9; }
-    #status { position: fixed; top:10px; right:10px; padding:8px 10px; font-size:12px; background: rgba(0,0,0,0.35); border:1px solid rgba(255,255,255,0.08); border-radius:10px; }
+    /* top-right status + controls */
+    #status { position: fixed; top:10px; right:10px; padding:8px 10px; font-size:12px; background: rgba(0,0,0,0.35); border:1px solid var(--border); border-radius:10px; z-index:5; }
+    #controls { position: fixed; top:50px; right:10px; width:260px; padding:12px; background: var(--glass); border:1px solid var(--border); border-radius:10px; backdrop-filter: blur(4px); z-index:5; }
+    #controls h4{ margin:0 0 8px 0; font-size:14px; font-weight:600; }
+    .row{ display:flex; align-items:center; gap:10px; margin:6px 0; }
+    .row label{ flex: 0 0 80px; font-size:12px; color:var(--muted); }
+    .row input[type=range]{ flex:1 }
+    .row input[type=checkbox]{ transform: translateY(1px); }
+    #camDetails{ margin-top:10px; font-size:12px; color:var(--muted); line-height:1.4; }
+    /* left camera list */
+    #listPanel{ position: fixed; left:10px; top:120px; width:220px; max-height: calc(100% - 130px); overflow:auto; background: var(--glass); border:1px solid var(--border); border-radius:10px; backdrop-filter: blur(4px); z-index:5; }
+    #listHeader{ padding:10px 12px; font-size:13px; font-weight:600; border-bottom:1px solid var(--border); }
+    #cameraList{ list-style:none; margin:0; padding:4px; }
+    .cam-row{ display:flex; justify-content:space-between; align-items:center; padding:6px 8px; margin:4px; border-radius:8px; cursor:pointer; font-size:13px; }
+    .cam-row:hover{ background: rgba(255,255,255,0.06); }
+    .cam-row.active{ background: var(--active); outline:1px solid rgba(105,156,204,.35); }
+    .sev{ font-size:12px; opacity:.8; }
+    /* small helper badges */
+    .kbd{ padding:1px 5px; border-radius:6px; background: rgba(255,255,255,.08); font-size:11px; }
   </style>
   <!-- Import map ensures any internal 'three' package imports resolve locally -->
   <script type="importmap">
@@ -23,11 +50,29 @@
 <body>
   <div id="hud">
     <div><strong>Fogsphere 3D Heatmap</strong></div>
-    <div>Keys: <code>F</code> frame selected · <code>H</code> heatmap · <code>R</code> reset</div>
+    <div>Keys: <span class="kbd">F</span> frame selected · <span class="kbd">H</span> heatmap · <span class="kbd">R</span> reset</div>
     <div id="legend">Loading…</div>
   </div>
+
   <div id="status">WS: <span id="wsStatus">connecting…</span> · Events: <span id="evCount">0</span></div>
 
-  <script type="module" src="app.js?v=4"></script>
+  <!-- Right controls -->
+  <div id="controls">
+    <h4>Display</h4>
+    <div class="row"><label for="pulseSpeed">Pulse</label><input id="pulseSpeed" type="range" min="300" max="3000" step="50" value="1200"><span id="pulseSpeedVal" class="sev">1.2s</span></div>
+    <div class="row"><label for="pulseSize">Size</label><input id="pulseSize" type="range" min="0.1" max="1.2" step="0.05" value="0.3"><span id="pulseSizeVal" class="sev">0.30</span></div>
+    <div class="row"><label for="opacity">Opacity</label><input id="opacity" type="range" min="0.2" max="1.0" step="0.05" value="0.75"><span id="opacityVal" class="sev">0.75</span></div>
+    <div class="row"><label>Heatmap</label><input id="toggleHeatmap" type="checkbox"></div>
+    <div class="row"><label>X-ray</label><input id="toggleXray" type="checkbox"></div>
+    <div id="camDetails">Selected: <span id="selName">—</span><br/>Last event: <span id="selTime">—</span> · Sev <span id="selSev">—</span></div>
+  </div>
+
+  <!-- Left camera list -->
+  <aside id="listPanel">
+    <div id="listHeader">Cameras</div>
+    <ul id="cameraList"></ul>
+  </aside>
+
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>

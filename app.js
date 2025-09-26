@@ -56,24 +56,24 @@ const heatColor = (s)=>{
   return s < 0.5 ? a.clone().lerp(b, s/0.5) : b.clone().lerp(c, (s-0.5)/0.5);
 };
 
-// 🔧 markers: make visible & uncullable
+// 🔧 markers: visible & uncullable
 const markerGeo = new THREE.SphereGeometry(2,24,24);
 const markerMat = new THREE.MeshBasicMaterial({
   color: 0xff0000,
   transparent: true,
   opacity: 0.75,
-  depthTest: false,   // draw on top
+  depthTest: false,   // draw on top (demo); set true for real occlusion
   depthWrite: false
 });
 const markers = new THREE.InstancedMesh(markerGeo, markerMat, 2048);
 markers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-markers.frustumCulled = false; // <— prevent whole batch from vanishing
+markers.frustumCulled = false;
 scene.add(markers);
 
-// 🔔 Global pulse controls (all markers in sync)
-const PULSE_PERIOD_MS = 1200;   // smaller = faster pulse
-const BASE_SCALE      = 0.7;    // minimum size
-const AMP_SCALE       = 0.3;    // pulse amount
+// 🔔 Global pulse controls (in-sync)
+let PULSE_PERIOD_MS = 1200;   // smaller = faster pulse
+let BASE_SCALE      = 0.7;    // minimum size
+let AMP_SCALE       = 0.3;    // pulse amount
 
 const floorSize = 200;
 const heatmapCanvas = document.createElement('canvas');
@@ -91,9 +91,12 @@ scene.add(floor);
 let heatmapEnabled = false;
 
 // ---- State ----
-let cams = [];
-const camIndex = new Map();
+let cams = [];                         // [{id,obj,world,heat,lastTs,lastSev}]
+const camIndex = new Map();            // name -> index
 let modelRoot = null;
+
+let selectedIndex = -1;                // current selected camera index
+const lastEventById = new Map();       // id -> {ts, severity}
 
 // --- X-ray state ---
 let xrayOn = false;
@@ -105,6 +108,20 @@ const raycaster = new THREE.Raycaster();
 const mouseNDC = new THREE.Vector2();
 const lastHit = new THREE.Vector3(); // last valid hit point
 let haveLastHit = false;
+
+// ---- DOM refs for UI ----
+const pulseSpeed = $("pulseSpeed");
+const pulseSpeedVal = $("pulseSpeedVal");
+const pulseSize = $("pulseSize");
+const pulseSizeVal = $("pulseSizeVal");
+const opacityInput = $("opacity");
+const opacityVal = $("opacityVal");
+const toggleHeatmap = $("toggleHeatmap");
+const toggleXray = $("toggleXray");
+const cameraListEl = $("cameraList");
+const selNameEl = $("selName");
+const selTimeEl = $("selTime");
+const selSevEl = $("selSev");
 
 // ---- Load model ----
 fetch('config.json')
@@ -142,7 +159,7 @@ function startWithConfig(cfg){
     controls.maxDistance = idealDist * 20;
     controls.update();
 
-    // 🔧 ensure node world matrices are up-to-date post recentre
+    // ensure matrices are up-to-date post recenter
     modelRoot.updateMatrixWorld(true);
 
     // --- Camera detection and markers ---
@@ -152,9 +169,9 @@ function startWithConfig(cfg){
         o.getWorldPosition(world);
         const i = cams.length;
         camIndex.set(o.name, i);
-        cams.push({ id:o.name, obj:o, world, heat:0, markerIndex:i });
+        cams.push({ id:o.name, obj:o, world, heat:0, lastTs:null, lastSev:null });
 
-        // 🔧 lift markers by 0.2m to avoid z-fighting
+        // lift markers by 0.2m to avoid z-fighting
         const p = new THREE.Vector3(world.x, world.y + 0.2, world.z);
         const m = new THREE.Matrix4().compose(p, new THREE.Quaternion(), new THREE.Vector3(1,1,1));
         markers.setMatrixAt(i, m);
@@ -166,7 +183,11 @@ function startWithConfig(cfg){
 
     markers.count = cams.length;
     markers.instanceMatrix.needsUpdate = true;
-    document.getElementById('legend') && (document.getElementById('legend').textContent = `Detected ${cams.length} cameras by prefix "${CAM_PREFIX}"`);
+    const legend = document.getElementById('legend');
+    legend && (legend.textContent = `Detected ${cams.length} cameras by prefix "${CAM_PREFIX}"`);
+
+    // build list UI now that we know cameras
+    buildCameraList();
 
     connectWS(cfg.websocket_url, cfg.simulate_if_no_ws !== false);
   }, undefined, (err)=>{
@@ -197,12 +218,16 @@ function handleEvent(evt){
   const c = cams[idx];
   const s = Math.max(0, Math.min(1, Number(evt.severity ?? 1)));
   c.heat = c.heat * 0.9 + s * 0.8;
+  c.lastTs = Date.now();
+  c.lastSev = s;
+  lastEventById.set(c.id, { ts: c.lastTs, severity: s });
+  if (selectedIndex === idx) refreshSelectedDetails();
+  bumpListRow(idx, s);
   if (heatmapEnabled) addHeatBlob(c.world.x, c.world.z, s);
   eventCount++; evCountEl && (evCountEl.textContent = String(eventCount));
 }
 
 let simTimer = null;
-// 🔧 fixed stray 'x' that caused blank page
 function startSim(){
   if (simTimer || !cams.length) return;
   wsStatus && (wsStatus.textContent = 'simulating');
@@ -226,12 +251,15 @@ function updateMarkers(dt, now){
     // keep heat decay for color only
     c.heat = Math.max(0, c.heat - dt*0.75);
 
+    // color reflects heat
     workColor.copy(heatColor(c.heat));
     markers.setColorAt && markers.setColorAt(i, workColor);
 
-    // keep the 0.2m lift; scale all by sGlobal
+    // keep the 0.2m lift; scale all by sGlobal (+ slight boost if selected)
+    const selBoost = (i === selectedIndex) ? 1.2 : 1.0;
+    const s = sGlobal * selBoost;
     const p = new THREE.Vector3(c.world.x, c.world.y + 0.2, c.world.z);
-    const m = new THREE.Matrix4().compose(p, new THREE.Quaternion(), new THREE.Vector3(sGlobal, sGlobal, sGlobal));
+    const m = new THREE.Matrix4().compose(p, new THREE.Quaternion(), new THREE.Vector3(s, s, s));
     markers.setMatrixAt(i, m);
   }
   markers.instanceColor && (markers.instanceColor.needsUpdate = true);
@@ -265,7 +293,7 @@ function decayHeatmap(){
 function enableXRay(){
   if (xrayOn || !modelRoot) return;
   xrayOn = true;
-  const XRAY_OPACITY = 0.25;
+  const XRAY_OPACITY = 0.15;
   const EDGE_COLOR = 0x000000;
   const EDGE_OPACITY = 0.35;
   modelRoot.traverse((o)=>{
@@ -312,6 +340,99 @@ function updateEdgeFollows(){
   });
 }
 
+// ---- UI: list + selection ----
+function buildCameraList(){
+  cameraListEl.innerHTML = '';
+  cams.forEach((c, i)=>{
+    const li = document.createElement('li');
+    li.className = 'cam-row';
+    li.dataset.index = String(i);
+    li.innerHTML = `<span>${c.id}</span><span class="sev" id="sev-${i}">—</span>`;
+    li.addEventListener('click', ()=> selectCamera(i, true));
+    cameraListEl.appendChild(li);
+  });
+  refreshListSelection();
+}
+function refreshListSelection(){
+  const rows = cameraListEl.querySelectorAll('.cam-row');
+  rows.forEach(r => r.classList.toggle('active', Number(r.dataset.index) === selectedIndex));
+}
+function bumpListRow(i, sev){
+  const el = document.getElementById(`sev-${i}`);
+  if (!el) return;
+  el.textContent = sev.toFixed(2);
+}
+function refreshSelectedDetails(){
+  if (selectedIndex < 0){ selNameEl.textContent='—'; selTimeEl.textContent='—'; selSevEl.textContent='—'; return; }
+  const c = cams[selectedIndex];
+  selNameEl.textContent = c.id;
+  selSevEl.textContent = (c.lastSev==null?'—':c.lastSev.toFixed(2));
+  if (c.lastTs){
+    const secs = Math.max(0, Math.round((Date.now()-c.lastTs)/1000));
+    selTimeEl.textContent = secs ? `${secs}s ago` : 'just now';
+  } else {
+    selTimeEl.textContent = '—';
+  }
+}
+function selectCamera(i, frame){
+  selectedIndex = i;
+  refreshListSelection();
+  refreshSelectedDetails();
+  if (frame) frameSelected();
+}
+function frameSelected(){
+  if (selectedIndex < 0) return;
+  const t = cams[selectedIndex].world;
+  controls.target.copy(t);
+  const camDir = new THREE.Vector3(6, 4, 6);
+  camera.position.lerp(new THREE.Vector3(t.x + camDir.x, t.y + camDir.y, t.z + camDir.z), 0.7);
+  controls.update();
+}
+
+// ---- Click picking (markers) ----
+renderer.domElement.addEventListener('pointerdown', (e)=>{
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouseNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouseNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouseNDC, camera);
+  // Pick instanced markers first
+  const hits = raycaster.intersectObject(markers, true);
+  if (hits.length && hits[0].instanceId != null){
+    const idx = hits[0].instanceId;
+    if (idx >=0 && idx < cams.length) selectCamera(idx, true);
+    return;
+  }
+  // Fallback: pick scene meshes (rare)
+  const hits2 = raycaster.intersectObject(modelRoot, true);
+  if (hits2.length && hits2[0].object && hits2[0].object.name){
+    const name = hits2[0].object.name;
+    const idx = camIndex.get(name);
+    if (idx !== undefined) selectCamera(idx, true);
+  }
+});
+
+// ---- Controls wiring ----
+pulseSpeed.addEventListener('input', ()=>{
+  PULSE_PERIOD_MS = Number(pulseSpeed.value);
+  pulseSpeedVal.textContent = (PULSE_PERIOD_MS/1000).toFixed(2) + 's';
+});
+pulseSize.addEventListener('input', ()=>{
+  AMP_SCALE = Number(pulseSize.value);
+  pulseSizeVal.textContent = AMP_SCALE.toFixed(2);
+});
+opacityInput.addEventListener('input', ()=>{
+  markerMat.opacity = Number(opacityInput.value);
+  opacityVal.textContent = markerMat.opacity.toFixed(2);
+});
+toggleHeatmap.addEventListener('change', ()=>{
+  heatmapEnabled = toggleHeatmap.checked;
+  floor.visible = heatmapEnabled;
+});
+toggleXray.addEventListener('change', ()=>{
+  if (toggleXray.checked) enableXRay(); else disableXRay();
+});
+
 // ---- Targeting helpers (fix zoom by re-targeting under cursor) ----
 function updateMouseNDC(event){
   const rect = renderer.domElement.getBoundingClientRect();
@@ -350,15 +471,17 @@ renderer.domElement.addEventListener('dblclick', (e)=>{
 
 // ---- Keyboard ----
 window.addEventListener('keydown', (e)=>{
-  if (e.key==='h' || e.key==='H'){ heatmapEnabled = !heatmapEnabled; floor.visible = heatmapEnabled; }
+  if (e.key==='h' || e.key==='H'){ heatmapEnabled = !heatmapEnabled; floor.visible = heatmapEnabled; toggleHeatmap.checked = heatmapEnabled; }
   else if (e.key==='r' || e.key==='R'){ controls.reset(); }
   else if (e.key==='f' || e.key==='F'){
-    if (!cams.length) return;
-    const t = cams.reduce((a,b)=> a.world.distanceTo(controls.target) < b.world.distanceTo(controls.target) ? a : b);
-    controls.target.copy(t.world);
-    camera.position.lerp(new THREE.Vector3(t.world.x+6, t.world.y+4, t.world.z+6), 0.7);
+    if (selectedIndex >= 0) frameSelected();
+    else if (cams.length){
+      const t = cams.reduce((a,b)=> a.world.distanceTo(controls.target) < b.world.distanceTo(controls.target) ? a : b);
+      const idx = camIndex.get(t.id) ?? cams.findIndex(x=>x.id===t.id);
+      if (idx>=0) selectCamera(idx, true);
+    }
   }
-  else if (e.key==='x' || e.key==='X'){ if (xrayOn) disableXRay(); else enableXRay(); }
+  else if (e.key==='x' || e.key==='X'){ toggleXray.checked = !toggleXray.checked; if (toggleXray.checked) enableXRay(); else disableXRay(); }
   else if (e.key==='e' || e.key==='E'){ // Zoom extents (frame)
     if (!modelRoot) return;
     const box = new THREE.Box3().setFromObject(modelRoot);
@@ -381,7 +504,6 @@ window.addEventListener('keydown', (e)=>{
       controls.target.copy(lastHit);
       controls.update();
     } else {
-      // if no hit yet, drop a point ~5m ahead to regain control
       const dir = new THREE.Vector3();
       camera.getWorldDirection(dir);
       controls.target.copy(camera.position).add(dir.multiplyScalar(5));
@@ -401,7 +523,7 @@ function animate(now){
   requestAnimationFrame(animate);
   const dt = Math.min(0.1, (now-last)/1000); last = now;
   controls.update();
-  updateMarkers(dt, now);   // <-- pass time so all markers pulse together
+  updateMarkers(dt, now);   // pulse + selection
   if (heatmapEnabled) decayHeatmap();
   updateEdgeFollows();
   renderer.render(scene, camera);
