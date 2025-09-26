@@ -10,10 +10,9 @@
       --border: rgba(255,255,255,0.08);
       --fg: #e6edf3;
       --muted: rgba(230,237,243,.7);
-      --accent: #69c;
-      --active: rgba(105, 156, 204, .25);
+      --active: rgba(105,156,204,.25);
     }
-    html, body { margin:0; padding:0; height:100%; background:#0b0f14; color:var(--fg); font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Helvetica Neue,Arial; }
+    html, body { margin:0; padding:0; height:100%; background:#0b0f14; color:var(--fg); font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial; }
     /* top-left HUD */
     #hud { position: fixed; top:10px; left:10px; padding:10px 12px; background: var(--glass); border:1px solid var(--border); border-radius:10px; backdrop-filter: blur(4px); z-index:5; }
     #hud code { background: rgba(255,255,255,0.08); padding:1px 6px; border-radius:6px; }
@@ -35,8 +34,15 @@
     .cam-row:hover{ background: rgba(255,255,255,0.06); }
     .cam-row.active{ background: var(--active); outline:1px solid rgba(105,156,204,.35); }
     .sev{ font-size:12px; opacity:.8; }
-    /* small helper badges */
     .kbd{ padding:1px 5px; border-radius:6px; background: rgba(255,255,255,.08); font-size:11px; }
+    /* extra details + event log */
+    #camMeta{ margin-top:8px; font-size:12px; color:var(--muted); }
+    #camMeta .row{ display:flex; justify-content:space-between; gap:10px; }
+    #eventsHeader{ margin-top:10px; font-size:12px; color:var(--muted); border-top:1px solid var(--border); padding-top:8px; }
+    #eventList{ max-height:160px; overflow:auto; }
+    .ev{ display:grid; grid-template-columns: 70px 1fr 42px; gap:6px; align-items:center; font-size:12px; padding:3px 0; }
+    .ev .bar{ height:6px; background: rgba(255,0,0,.4); border-radius:4px; }
+    .ev .ts{ color:var(--muted); }
   </style>
   <!-- Import map ensures any internal 'three' package imports resolve locally -->
   <script type="importmap">
@@ -65,6 +71,15 @@
     <div class="row"><label>Heatmap</label><input id="toggleHeatmap" type="checkbox"></div>
     <div class="row"><label>X-ray</label><input id="toggleXray" type="checkbox"></div>
     <div id="camDetails">Selected: <span id="selName">—</span><br/>Last event: <span id="selTime">—</span> · Sev <span id="selSev">—</span></div>
+
+    <!-- extra details -->
+    <div id="camMeta">
+      <div class="row"><span>ID</span><span id="d_id">—</span></div>
+      <div class="row"><span>Position</span><span id="d_pos">—</span></div>
+      <div class="row"><span>Distance</span><span id="d_dist">—</span></div>
+    </div>
+    <div id="eventsHeader">Recent events</div>
+    <div id="eventList"></div>
   </div>
 
   <!-- Left camera list -->
@@ -73,6 +88,6 @@
     <ul id="cameraList"></ul>
   </aside>
 
-  <script type="module" src="app.js?v=8"></script>
+  <script type="module" src="app.js?v=9"></script>
 </body>
 </html>

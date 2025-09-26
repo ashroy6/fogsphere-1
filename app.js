@@ -20,7 +20,7 @@ document.body.appendChild(renderer.domElement);
 
 // ---- Scene & Camera ----
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf5f5f5); // SketchUp-like background
+scene.background = new THREE.Color(0xf5f5f5);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 5000);
 camera.position.set(12, 10, 16);
@@ -62,7 +62,7 @@ const markerMat = new THREE.MeshBasicMaterial({
   color: 0xff0000,
   transparent: true,
   opacity: 0.75,
-  depthTest: false,   // draw on top (demo); set true for real occlusion
+  depthTest: false,
   depthWrite: false
 });
 const markers = new THREE.InstancedMesh(markerGeo, markerMat, 2048);
@@ -97,6 +97,8 @@ let modelRoot = null;
 
 let selectedIndex = -1;                // current selected camera index
 const lastEventById = new Map();       // id -> {ts, severity}
+// Per-camera event history (id -> [{ts, severity, payload}])
+const eventHistory = new Map();
 
 // --- X-ray state ---
 let xrayOn = false;
@@ -122,6 +124,38 @@ const cameraListEl = $("cameraList");
 const selNameEl = $("selName");
 const selTimeEl = $("selTime");
 const selSevEl = $("selSev");
+// extra details
+const dIdEl = $("d_id");
+const dPosEl = $("d_pos");
+const dDistEl = $("d_dist");
+const eventListEl = $("eventList");
+
+// ---- Helpers ----
+function fmtXYZ(v){ return `${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}`; }
+function timeAgo(ts){
+  const s = Math.max(0, Math.round((Date.now()-ts)/1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s/60), r = s%60;
+  return `${m}m ${r}s`;
+}
+function pushEvent(id, sev, payload){
+  const arr = eventHistory.get(id) || [];
+  arr.push({ ts: Date.now(), severity: sev, payload });
+  while (arr.length > 20) arr.shift();
+  eventHistory.set(id, arr);
+}
+function renderEventList(id){
+  const arr = eventHistory.get(id) || [];
+  const rows = arr.slice(-10).reverse().map(e=>{
+    const w = Math.round(e.severity * 100);
+    return `<div class="ev">
+      <span class="ts">${timeAgo(e.ts)} ago</span>
+      <div class="bar" style="width:${w}%"></div>
+      <span>${e.severity.toFixed(2)}</span>
+    </div>`;
+  }).join("");
+  eventListEl.innerHTML = rows || `<div class="ev"><span class="ts">no events</span><div></div><span>—</span></div>`;
+}
 
 // ---- Load model ----
 fetch('config.json')
@@ -159,7 +193,6 @@ function startWithConfig(cfg){
     controls.maxDistance = idealDist * 20;
     controls.update();
 
-    // ensure matrices are up-to-date post recenter
     modelRoot.updateMatrixWorld(true);
 
     // --- Camera detection and markers ---
@@ -171,7 +204,6 @@ function startWithConfig(cfg){
         camIndex.set(o.name, i);
         cams.push({ id:o.name, obj:o, world, heat:0, lastTs:null, lastSev:null });
 
-        // lift markers by 0.2m to avoid z-fighting
         const p = new THREE.Vector3(world.x, world.y + 0.2, world.z);
         const m = new THREE.Matrix4().compose(p, new THREE.Quaternion(), new THREE.Vector3(1,1,1));
         markers.setMatrixAt(i, m);
@@ -186,9 +218,7 @@ function startWithConfig(cfg){
     const legend = document.getElementById('legend');
     legend && (legend.textContent = `Detected ${cams.length} cameras by prefix "${CAM_PREFIX}"`);
 
-    // build list UI now that we know cameras
     buildCameraList();
-
     connectWS(cfg.websocket_url, cfg.simulate_if_no_ws !== false);
   }, undefined, (err)=>{
     console.error('GLB load error:', err);
@@ -221,7 +251,13 @@ function handleEvent(evt){
   c.lastTs = Date.now();
   c.lastSev = s;
   lastEventById.set(c.id, { ts: c.lastTs, severity: s });
-  if (selectedIndex === idx) refreshSelectedDetails();
+
+  pushEvent(c.id, s, evt.payload);      // store in history
+
+  if (selectedIndex === idx){
+    refreshSelectedDetails();
+    renderEventList(c.id);
+  }
   bumpListRow(idx, s);
   if (heatmapEnabled) addHeatBlob(c.world.x, c.world.z, s);
   eventCount++; evCountEl && (evCountEl.textContent = String(eventCount));
@@ -241,21 +277,17 @@ function startSim(){
 // ---- Markers update (global, in-sync pulse) ----
 const workColor = new THREE.Color();
 function updateMarkers(dt, now){
-  // global 0..1 pulse (everyone same phase)
   const TWO_PI = Math.PI * 2;
   const pulse01 = 0.5 + 0.5 * Math.sin((now % PULSE_PERIOD_MS) * (TWO_PI / PULSE_PERIOD_MS));
   const sGlobal = BASE_SCALE + AMP_SCALE * pulse01;
 
   for (let i=0;i<cams.length;i++){
     const c = cams[i];
-    // keep heat decay for color only
     c.heat = Math.max(0, c.heat - dt*0.75);
 
-    // color reflects heat
     workColor.copy(heatColor(c.heat));
     markers.setColorAt && markers.setColorAt(i, workColor);
 
-    // keep the 0.2m lift; scale all by sGlobal (+ slight boost if selected)
     const selBoost = (i === selectedIndex) ? 1.2 : 1.0;
     const s = sGlobal * selBoost;
     const p = new THREE.Vector3(c.world.x, c.world.y + 0.2, c.world.z);
@@ -363,16 +395,24 @@ function bumpListRow(i, sev){
   el.textContent = sev.toFixed(2);
 }
 function refreshSelectedDetails(){
-  if (selectedIndex < 0){ selNameEl.textContent='—'; selTimeEl.textContent='—'; selSevEl.textContent='—'; return; }
+  if (selectedIndex < 0){
+    selNameEl.textContent='—'; selTimeEl.textContent='—'; selSevEl.textContent='—';
+    dIdEl.textContent = '—'; dPosEl.textContent = '—'; dDistEl.textContent = '—';
+    eventListEl.innerHTML = '';
+    return;
+  }
   const c = cams[selectedIndex];
   selNameEl.textContent = c.id;
   selSevEl.textContent = (c.lastSev==null?'—':c.lastSev.toFixed(2));
   if (c.lastTs){
-    const secs = Math.max(0, Math.round((Date.now()-c.lastTs)/1000));
-    selTimeEl.textContent = secs ? `${secs}s ago` : 'just now';
+    selTimeEl.textContent = `${timeAgo(c.lastTs)} ago`;
   } else {
     selTimeEl.textContent = '—';
   }
+  dIdEl.textContent = c.id;
+  dPosEl.textContent = fmtXYZ(c.world);
+  dDistEl.textContent = `${camera.position.distanceTo(c.world).toFixed(2)} m`;
+  renderEventList(c.id);
 }
 function selectCamera(i, frame){
   selectedIndex = i;
@@ -404,11 +444,13 @@ renderer.domElement.addEventListener('pointerdown', (e)=>{
     return;
   }
   // Fallback: pick scene meshes (rare)
-  const hits2 = raycaster.intersectObject(modelRoot, true);
-  if (hits2.length && hits2[0].object && hits2[0].object.name){
-    const name = hits2[0].object.name;
-    const idx = camIndex.get(name);
-    if (idx !== undefined) selectCamera(idx, true);
+  if (modelRoot){
+    const hits2 = raycaster.intersectObject(modelRoot, true);
+    if (hits2.length && hits2[0].object && hits2[0].object.name){
+      const name = hits2[0].object.name;
+      const idx = camIndex.get(name);
+      if (idx !== undefined) selectCamera(idx, true);
+    }
   }
 });
 
@@ -439,15 +481,12 @@ function updateMouseNDC(event){
   mouseNDC.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouseNDC.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 }
-
 function raycastUnderMouse(){
   if (!modelRoot) return null;
   raycaster.setFromCamera(mouseNDC, camera);
   const hits = raycaster.intersectObject(modelRoot, true);
   return hits.length ? hits[0] : null;
 }
-
-// track last valid hit while moving
 renderer.domElement.addEventListener('pointermove', (e)=>{
   updateMouseNDC(e);
   const hit = raycastUnderMouse();
@@ -456,8 +495,6 @@ renderer.domElement.addEventListener('pointermove', (e)=>{
     haveLastHit = true;
   }
 });
-
-// double-click to retarget orbit point to surface under cursor
 renderer.domElement.addEventListener('dblclick', (e)=>{
   updateMouseNDC(e);
   const hit = raycastUnderMouse();
@@ -482,7 +519,7 @@ window.addEventListener('keydown', (e)=>{
     }
   }
   else if (e.key==='x' || e.key==='X'){ toggleXray.checked = !toggleXray.checked; if (toggleXray.checked) enableXRay(); else disableXRay(); }
-  else if (e.key==='e' || e.key==='E'){ // Zoom extents (frame)
+  else if (e.key==='e' || e.key==='E'){
     if (!modelRoot) return;
     const box = new THREE.Box3().setFromObject(modelRoot);
     const size = box.getSize(new THREE.Vector3()).length();
@@ -490,7 +527,7 @@ window.addEventListener('keydown', (e)=>{
     controls.target.set(0,0,0);
     controls.update();
   }
-  else if (e.key==='c' || e.key==='C'){ // Close-focus safely (5–10 cm ahead)
+  else if (e.key==='c' || e.key==='C'){
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
     controls.target.copy(camera.position).add(dir.multiplyScalar(0.1));
@@ -499,7 +536,7 @@ window.addEventListener('keydown', (e)=>{
     controls.minDistance = Math.max(0.05, controls.minDistance);
     controls.update();
   }
-  else if (e.key==='z' || e.key==='Z'){ // Snap target to last mouse hit (or ray forward)
+  else if (e.key==='z' || e.key==='Z'){
     if (haveLastHit){
       controls.target.copy(lastHit);
       controls.update();
@@ -523,7 +560,7 @@ function animate(now){
   requestAnimationFrame(animate);
   const dt = Math.min(0.1, (now-last)/1000); last = now;
   controls.update();
-  updateMarkers(dt, now);   // pulse + selection
+  updateMarkers(dt, now);
   if (heatmapEnabled) decayHeatmap();
   updateEdgeFollows();
   renderer.render(scene, camera);
